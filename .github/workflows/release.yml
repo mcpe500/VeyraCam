@@ -1,0 +1,143 @@
+name: Veyra Release Matrix (Android APK & Windows EXE)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android APK (VeyraCam)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android NDK & SDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: |
+          cd packages/veyra_models && flutter pub get
+          cd ../veyra_protocol_dart && flutter pub get
+          cd ../veyra_ui && flutter pub get
+          cd ../../apps/veyracam && flutter pub get
+
+      - name: Build Release APK
+        run: |
+          cd apps/veyracam
+          flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          mv apps/veyracam/build/app/outputs/flutter-apk/app-release.apk VeyraCam-v1.0.0.apk
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: veyracam-apk
+          path: VeyraCam-v1.0.0.apk
+
+  build-windows:
+    name: Build Windows Desktop (VeyraLink & VeyraCore)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC & CMake
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Build Native C++ VeyraCore & DLL
+        run: |
+          cd native/windows
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      - name: Build Flutter Desktop UI
+        run: |
+          cd packages/veyra_models && flutter pub get
+          cd ../veyra_protocol_dart && flutter pub get
+          cd ../veyra_native && flutter pub get
+          cd ../veyra_ui && flutter pub get
+          cd ../../apps/veyralink && flutter pub get
+          flutter build windows --release
+
+      - name: Bundle Desktop Release Package
+        shell: pwsh
+        run: |
+          $releaseDir = "apps/veyralink/build/windows/x64/runner/Release"
+          Copy-Item "native/windows/build/Release/VeyraCore.exe" -Destination $releaseDir
+          Copy-Item "native/windows/build/Release/veyra_core_api.dll" -Destination $releaseDir
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath "VeyraLink-v1.0.0-windows-x64.zip"
+
+      - name: Upload Windows Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: veyralink-windows
+          path: VeyraLink-v1.0.0-windows-x64.zip
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: veyracam-apk
+
+      - name: Download Windows Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: veyralink-windows
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            VeyraCam-v1.0.0.apk
+            VeyraLink-v1.0.0-windows-x64.zip
+          name: "Veyra System v1.0.0 (Release)"
+          body: |
+            ## VeyraCam v1.0.0 — Zero-Copy Virtual Webcam
+
+            ### 📦 Included Release Binaries:
+            1. **`VeyraCam-v1.0.0.apk`** — Android 7.0+ Application (Camera2 HW encoder, Screen-Off mode, foreground service).
+            2. **`VeyraLink-v1.0.0-windows-x64.zip`** — Windows 10/11 Suite (Includes `VeyraLink.exe`, `VeyraCore.exe`, and `veyra_core_api.dll` virtual camera drivers).
+
+            ### 🚀 Features:
+            - **Zero-Copy Native Path:** Ultra-low latency camera pipeline (`Camera2 → MediaCodec → D3D11 NV12`).
+            - **Multi-Transport:** Seamless streaming over Wi-Fi LAN, Wi-Fi Direct, USB (ADB), and Bluetooth Classic.
+            - **Universal Compatibility:** Works seamlessly with Zoom, Microsoft Teams, OBS Studio, Google Meet, and Discord.
+          draft: false
+          prerelease: false
