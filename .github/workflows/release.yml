@@ -27,7 +27,7 @@ jobs:
       - name: Set up Android NDK & SDK
         uses: nttld/setup-ndk@aacaf74664d0f8e1b070a865acb47ee25007386d # v1.6.0
         with:
-          ndk-version: r28.2.13676358
+          ndk-version: r28c
 
       - name: Set up Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
