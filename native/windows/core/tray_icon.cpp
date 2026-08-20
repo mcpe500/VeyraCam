@@ -30,7 +30,7 @@ bool TrayIcon::Create(const std::wstring& tooltip, ClickCallback onDoubleClick, 
     nid_.uID = 1;
     nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid_.uCallbackMessage = WM_USER + 1;
-    nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    nid_.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
     wcsncpy_s(nid_.szTip, tooltip.c_str(), 127);
 
     Shell_NotifyIconW(NIM_ADD, &nid_);

@@ -39,7 +39,8 @@ bool MFVirtualCameraManager::RegisterVirtualCamera(const std::wstring& friendlyN
             GetProcAddress(hMf, "MFCreateVirtualCamera")
         );
         if (pfnCreate) {
-            GUID categories[] = { KSCATEGORY_VIDEO_CAMERA, KSCATEGORY_CAPTURE };
+            static const GUID kVideoCameraCategory = { 0xE5323777, 0xF976, 0x4f5b, { 0x9B, 0x55, 0xB9, 0x46, 0x99, 0xC4, 0x6E, 0x44 } };
+            const GUID categories[] = { kVideoCameraCategory };
             HRESULT hr = pfnCreate(
                 MFVirtualCameraType_SoftwareCameraSource,
                 MFVirtualCameraLifetime_Session,
@@ -47,7 +48,7 @@ bool MFVirtualCameraManager::RegisterVirtualCamera(const std::wstring& friendlyN
                 friendlyName_.c_str(),
                 nullptr,
                 categories,
-                ARRAYSIZE(categories),
+                1,
                 &virtualCamera_
             );
 

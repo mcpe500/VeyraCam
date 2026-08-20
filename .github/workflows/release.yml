@@ -45,7 +45,7 @@ jobs:
       - name: Build Release APK
         run: |
           cd apps/veyracam
-          flutter build apk --release --android-skip-build-dependency-validation
+          flutter build apk --release
 
       - name: Locate & Rename APK
         run: |
