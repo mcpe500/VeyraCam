@@ -4,7 +4,7 @@ project(veyra_jni LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(VEYRA_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../native/core)
+set(VEYRA_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../native/core)
 
 include_directories(
     ${VEYRA_CORE_DIR}/include

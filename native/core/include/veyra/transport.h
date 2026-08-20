@@ -1,6 +1,8 @@
 #pragma once
 
 #include "protocol.h"
+#include <cstdint>
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <memory>
@@ -38,7 +40,7 @@ public:
     virtual TransportType GetType() const = 0;
     virtual std::string GetName() const = 0;
     virtual bool Connect(const std::string& endpoint, uint16_t port) = 0;
-    virtual ssize_t Send(const uint8_t* data, size_t size) = 0;
+    virtual int64_t Send(const uint8_t* data, size_t size) = 0;
     virtual void Close() = 0;
     virtual TransportState GetState() const = 0;
     virtual TransportMetrics GetMetrics() const = 0;

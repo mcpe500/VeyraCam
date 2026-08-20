@@ -7,6 +7,8 @@
 #include <mutex>
 #include <atomic>
 #include <functional>
+#include <cstdint>
+#include <cstddef>
 
 namespace veyra {
 
@@ -25,7 +27,7 @@ public:
     TransportType GetActiveTransportType() const;
 
     // Send packet via currently active transport
-    ssize_t SendPacket(const uint8_t* data, size_t size);
+    int64_t SendPacket(const uint8_t* data, size_t size);
 
     // Evaluate health and initiate seamless handoff if necessary
     bool EvaluateAndHandoff();
@@ -41,7 +43,7 @@ public:
 private:
     int CalculateRank(TransportType type, const TransportMetrics& metrics) const;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::map<TransportType, std::shared_ptr<Transport>> transports_;
     std::shared_ptr<Transport> activeTransport_;
     TransportType preferredMode_{TransportType::AUTO};

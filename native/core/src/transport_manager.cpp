@@ -46,7 +46,7 @@ TransportType AutoTransportManager::GetActiveTransportType() const {
     return TransportType::AUTO;
 }
 
-ssize_t AutoTransportManager::SendPacket(const uint8_t* data, size_t size) {
+int64_t AutoTransportManager::SendPacket(const uint8_t* data, size_t size) {
     std::shared_ptr<Transport> current;
     {
         std::lock_guard<std::mutex> lock(mutex_);

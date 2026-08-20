@@ -26,9 +26,9 @@ public:
         return true;
     }
 
-    ssize_t Send(const uint8_t* data, size_t size) override {
+    int64_t Send(const uint8_t* data, size_t size) override {
         sentBytes_ += size;
-        return static_cast<ssize_t>(size);
+        return static_cast<int64_t>(size);
     }
 
     void Close() override {
@@ -280,8 +280,8 @@ void TestTransportManager() {
     assert(tm.GetActiveTransportType() == veyra::TransportType::USB);
 
     uint8_t dummyPacket[100] = {0};
-    ssize_t sent = tm.SendPacket(dummyPacket, sizeof(dummyPacket));
-    assert(sent == sizeof(dummyPacket));
+    int64_t sent = tm.SendPacket(dummyPacket, sizeof(dummyPacket));
+    assert(sent == static_cast<int64_t>(sizeof(dummyPacket)));
 
     // Force seamless handoff to Wi-Fi
     bool handoffOk = tm.InitiateHandoff(veyra::TransportType::WIFI_LAN);
