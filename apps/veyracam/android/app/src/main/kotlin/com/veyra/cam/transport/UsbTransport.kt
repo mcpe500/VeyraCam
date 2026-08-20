@@ -20,8 +20,8 @@ class UsbTransport(
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "android.hardware.usb.action.USB_STATE") {
-                val connected = intent.getBooleanExtra(UsbManager.USB_CONNECTED, false)
-                val configured = intent.getBooleanExtra(UsbManager.USB_CONFIGURED, false)
+                val connected = intent.getBooleanExtra("connected", false)
+                val configured = intent.getBooleanExtra("configured", false)
                 Log.i(TAG, "USB State changed: connected=$connected, configured=$configured")
                 onUsbStateChanged(connected)
             }

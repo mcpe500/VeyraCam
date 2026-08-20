@@ -56,7 +56,7 @@ class FlutterBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
 
                 // Create Texture Entry for zero-copy local preview in Flutter
                 surfaceEntry?.release()
-                val entry = textureRegistry?.createSurfaceTextureEntry()
+                val entry = textureRegistry?.registerSurfaceTexture(android.graphics.SurfaceTexture(0))
                 surfaceEntry = entry
 
                 // Start Foreground Service
