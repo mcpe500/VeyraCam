@@ -18,7 +18,7 @@ public:
     ~TcpControlClient();
 
     bool Connect(const std::string& host, uint16_t port = 5150, MessageReceivedCallback onMessage = nullptr);
-    bool SendMessage(const std::string& jsonMessage);
+    bool SendControlMessage(const std::string& jsonMessage);
     void Disconnect();
 
     bool IsConnected() const { return isConnected_; }

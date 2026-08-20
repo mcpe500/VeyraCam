@@ -31,7 +31,7 @@ class VeyraTheme {
         surface: VeyraColors.surface,
         error: VeyraColors.error,
       ),
-      cardTheme: CardThemeData(
+      cardTheme: CardTheme(
         color: VeyraColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),

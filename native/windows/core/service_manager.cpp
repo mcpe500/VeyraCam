@@ -89,14 +89,14 @@ bool ServiceManager::ConnectDevice(const std::string& hostIp, uint16_t controlPo
         isStreaming_ = true;
         // Send startStream command
         std::string startStreamMsg = "{\"type\":\"startStream\",\"video\":{\"width\":1280,\"height\":720,\"fps\":30,\"bitrate\":2500000}}";
-        tcpClient_->SendMessage(startStreamMsg);
+        tcpClient_->SendControlMessage(startStreamMsg);
     }
     return ok;
 }
 
 void ServiceManager::DisconnectDevice() {
     if (tcpClient_) {
-        tcpClient_->SendMessage("{\"type\":\"stopStream\"}");
+        tcpClient_->SendControlMessage("{\"type\":\"stopStream\"}");
         tcpClient_->Disconnect();
     }
     isStreaming_ = false;
@@ -115,37 +115,37 @@ void ServiceManager::OnTcpControlMessage(const std::string& message) {
 
 void ServiceManager::SetZoom(float zoom) {
     if (tcpClient_ && isStreaming_) {
-        tcpClient_->SendMessage("{\"type\":\"setZoom\",\"zoom\":" + std::to_string(zoom) + "}");
+        tcpClient_->SendControlMessage("{\"type\":\"setZoom\",\"zoom\":" + std::to_string(zoom) + "}");
     }
 }
 
 void ServiceManager::SetExposure(int32_t exposure) {
     if (tcpClient_ && isStreaming_) {
-        tcpClient_->SendMessage("{\"type\":\"setExposure\",\"exposure\":" + std::to_string(exposure) + "}");
+        tcpClient_->SendControlMessage("{\"type\":\"setExposure\",\"exposure\":" + std::to_string(exposure) + "}");
     }
 }
 
 void ServiceManager::SetFocus(bool autoFocus, float distance) {
     if (tcpClient_ && isStreaming_) {
-        tcpClient_->SendMessage("{\"type\":\"setFocus\",\"autoFocus\":" + std::string(autoFocus ? "true" : "false") + ",\"distance\":" + std::to_string(distance) + "}");
+        tcpClient_->SendControlMessage("{\"type\":\"setFocus\",\"autoFocus\":" + std::string(autoFocus ? "true" : "false") + ",\"distance\":" + std::to_string(distance) + "}");
     }
 }
 
 void ServiceManager::SetTorch(bool enabled) {
     if (tcpClient_ && isStreaming_) {
-        tcpClient_->SendMessage("{\"type\":\"setTorch\",\"enabled\":" + std::string(enabled ? "true" : "false") + "}");
+        tcpClient_->SendControlMessage("{\"type\":\"setTorch\",\"enabled\":" + std::string(enabled ? "true" : "false") + "}");
     }
 }
 
 void ServiceManager::SwitchCamera(bool front) {
     if (tcpClient_ && isStreaming_) {
-        tcpClient_->SendMessage("{\"type\":\"switchCamera\",\"front\":" + std::string(front ? "true" : "false") + "}");
+        tcpClient_->SendControlMessage("{\"type\":\"switchCamera\",\"front\":" + std::string(front ? "true" : "false") + "}");
     }
 }
 
 void ServiceManager::RequestIdr() {
     if (tcpClient_ && isStreaming_) {
-        tcpClient_->SendMessage("{\"type\":\"requestIdr\"}");
+        tcpClient_->SendControlMessage("{\"type\":\"requestIdr\"}");
     }
 }
 

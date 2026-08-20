@@ -69,7 +69,7 @@ bool TcpControlClient::Connect(const std::string& host, uint16_t port, MessageRe
     return true;
 }
 
-bool TcpControlClient::SendMessage(const std::string& jsonMessage) {
+bool TcpControlClient::SendControlMessage(const std::string& jsonMessage) {
     if (!isConnected_) return false;
     std::lock_guard<std::mutex> lock(sendMutex_);
 
