@@ -63,23 +63,29 @@ if (WIN32)
     target_link_libraries(VeyraCore
         mfplat
         mfuuid
+        wmcodecdspuuid
         d3d11
         dxgi
         ws2_32
         strmiids
         shell32
         user32
+        ole32
+        oleaut32
     )
 
     target_link_libraries(veyra_core_api
         mfplat
         mfuuid
+        wmcodecdspuuid
         d3d11
         dxgi
         ws2_32
         strmiids
         shell32
         user32
+        ole32
+        oleaut32
     )
 else()
     find_package(Threads REQUIRED)

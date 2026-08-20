@@ -16,11 +16,7 @@ void SignalHandler(int signum) {
     g_running = false;
 }
 
-#ifdef _WIN32
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-#else
 int main(int argc, char* argv[]) {
-#endif
     signal(SIGINT, SignalHandler);
     signal(SIGTERM, SignalHandler);
 

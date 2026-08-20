@@ -35,8 +35,9 @@ bool MFDecoder::Initialize(uint32_t width, uint32_t height, bool enableHardwareA
     }
 
     // 1. Create H.264 Decoder MFT
+    static const GUID kClsidH264Decoder = { 0x62CE7E72, 0x4C71, 0x4d20, { 0xB1, 0x5D, 0x45, 0x28, 0x31, 0xA8, 0x7D, 0x9D } };
     hr = CoCreateInstance(
-        CLSID_CMSH264DecoderMFT,
+        kClsidH264Decoder,
         nullptr,
         CLSCTX_INPROC_SERVER,
         IID_PPV_ARGS(&decoderMft_)
