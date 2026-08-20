@@ -63,6 +63,10 @@ class VeyraStreamingService : Service() {
     private var currentFps = 30
     private var currentBitrateBps = 2500000
 
+    private val pairingManager = PairingManager()
+    private var sessionId = 0
+    private var clientIp: String? = null
+
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -136,9 +140,10 @@ class VeyraStreamingService : Service() {
         currentFps = fps
         currentBitrateBps = bitrateBps
 
-        // 1. Create native core session
-        val sessionId = (System.currentTimeMillis() and 0x7FFFFFFF).toInt()
-        nativeHandle = VeyraNativeBridge.nativeCreateSession(sessionId)
+        // 1. Create native core session (M-4: session id generated via CSPRNG
+        // inside the native layer, never from wall-clock time).
+        nativeHandle = VeyraNativeBridge.nativeCreateSession(0)
+        sessionId = VeyraNativeBridge.nativeGetSessionId(nativeHandle)
 
         // 2. Initialize thermal management
         thermalController = ThermalController(this) { recommendation ->
@@ -179,19 +184,37 @@ class VeyraStreamingService : Service() {
             nativeHandleProvider = { nativeHandle }
         ).apply { start() }
 
-        // 6. Initialize Network & Transports
+        // 6. Initialize Network & Transports (C-2: pairing-gated control channel)
         udpTransport = UdpTransport(
             controlPort = 5150,
+            pairingManager = pairingManager,
+            getServerPublicKey = {
+                if (nativeHandle != 0L) VeyraNativeBridge.nativeBeginPairing(nativeHandle) else ""
+            },
+            getSessionId = { sessionId },
             onControlCommandReceived = { opCode, payload ->
                 handleControlCommand(opCode, payload)
             },
-            onClientConnected = { clientIp, udpPort ->
-                Log.i(TAG, "Client connected: $clientIp:$udpPort")
-                VeyraNativeBridge.nativeConfigureUdpDestination(nativeHandle, clientIp, udpPort)
-                updateNotification("Streaming to $clientIp")
+            onAuthenticated = { ip, udpPort ->
+                Log.i(TAG, "Client paired & authenticated: $ip:$udpPort")
+                clientIp = ip
+                VeyraNativeBridge.nativeConfigureUdpDestination(nativeHandle, ip, udpPort)
+                updateNotification("Streaming to $ip")
+            },
+            onPinRequired = { pin ->
+                Log.i(TAG, "Pairing PIN: $pin")
+                updateNotification("Pair with VeyraLink using PIN $pin")
+            },
+            onPairingFailed = { reason ->
+                Log.w(TAG, "Pairing failed: $reason")
+                updateNotification("Pairing failed")
+            },
+            onCompletePairing = { clientPubKey ->
+                VeyraNativeBridge.nativeCompletePairing(nativeHandle, clientPubKey)
             },
             onClientDisconnected = {
-                Log.i(TAG, "Client disconnected")
+                clientIp = null
+                pairingManager.reset()
                 updateNotification("Waiting for connection...")
             }
         ).apply { start() }
@@ -211,8 +234,8 @@ class VeyraStreamingService : Service() {
 
     private fun handleControlCommand(opCode: Int, payload: JSONObject) {
         when (opCode) {
-            0x01 -> { // HELLO
-                val caps = CameraCapabilities(this).toCapabilitiesJson(Build.MODEL, "android-${Build.SERIAL ?: "dev"}")
+            0x01 -> { // HELLO (only reachable post-auth; M-6: no device fingerprint)
+                val caps = CameraCapabilities(this).toCapabilitiesJson(Build.MODEL, "android")
                 udpTransport?.sendControlMessage(caps)
             }
             0x03 -> { // START_STREAM
@@ -287,6 +310,8 @@ class VeyraStreamingService : Service() {
             "{}"
         }
     }
+
+    fun getPairingPin(): String? = pairingManager.getCurrentPin()
 
     fun stopStreaming() {
         if (!isStreaming) return

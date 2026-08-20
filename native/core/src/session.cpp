@@ -1,16 +1,15 @@
 #include "veyra/session.h"
-#include <random>
 #include <cstring>
 
 namespace veyra {
 
 VeyraSession::VeyraSession() {
-    std::random_device rd;
-    sessionId_ = rd();
+    // M-4: unpredictable session id from the mbedTLS CSPRNG.
+    sessionId_ = SessionCrypto::RandomId();
 
     transportManager_ = std::make_unique<AutoTransportManager>();
+    crypto_ = std::make_shared<SessionCrypto>();
     packetizer_ = std::make_unique<Packetizer>(sessionId_);
-    crypto_ = std::make_unique<SessionCrypto>();
 
     reassembler_ = std::make_unique<FrameReassembler>(
         [this](VideoFrame frame) {
@@ -40,13 +39,28 @@ bool VeyraSession::StartSession(const StreamConfig& config) {
     transportManager_->SetPreferredTransportMode(config.preferredTransport);
 
     if (config.enableEncryption) {
-        // Ephemeral crypto key generation if requested
-        auto keyPair = SessionCrypto::GenerateKeyPair();
-        crypto_->SetSessionKey(keyPair.publicKey.data());
+        // C-1/C-3 fix: session keys are established exclusively via the
+        // pairing handshake (X25519 key exchange in SessionCrypto). A session
+        // without a negotiated key must never pretend to be encrypted.
+        if (!crypto_->IsKeySet()) {
+            SetState(SessionState::ERROR_STATE,
+                     "Encryption requested but no paired session key; run pairing first");
+            return false;
+        }
+        packetizer_->SetCrypto(crypto_);
+        reassembler_->SetCrypto(crypto_);
     }
 
     SetState(SessionState::STREAMING, "Session active and streaming");
     return true;
+}
+
+void VeyraSession::SetCrypto(std::shared_ptr<SessionCrypto> crypto) {
+    crypto_ = std::move(crypto);
+    if (crypto_ && config_.enableEncryption && state_ != SessionState::IDLE) {
+        packetizer_->SetCrypto(crypto_);
+        reassembler_->SetCrypto(crypto_);
+    }
 }
 
 void VeyraSession::StopSession() {

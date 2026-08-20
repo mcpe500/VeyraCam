@@ -1,30 +1,52 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:veyralink/main.dart';
+import 'package:veyralink/views/device_discovery_dialog.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('Device discovery dialog requires IP and 6-digit PIN',
+      (WidgetTester tester) async {
+    String? capturedIp;
+    String? capturedPin;
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => DeviceDiscoveryDialog(
+                  onConnect: (ip, port, pin) {
+                    capturedIp = ip;
+                    capturedPin = pin;
+                  },
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connect to Phone'), findsOneWidget);
+
+    // Empty fields -> connect shows a SnackBar, nothing captured.
+    await tester.tap(find.text('Connect'));
     await tester.pump();
+    expect(capturedIp, isNull);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Fill IP + 6-digit PIN -> connect captures both.
+    await tester.enterText(find.byType(TextField).at(0), '192.168.1.50');
+    await tester.enterText(find.byType(TextField).at(2), '123456');
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+
+    expect(capturedIp, '192.168.1.50');
+    expect(capturedPin, '123456');
   });
 }

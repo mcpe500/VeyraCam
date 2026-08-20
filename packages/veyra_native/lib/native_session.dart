@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi' as ffi;
 import 'package:ffi/ffi.dart';
 import 'package:veyra_models/veyra_models.dart';
 import 'ffi_bindings.dart';
@@ -7,6 +8,8 @@ class NativeDesktopSession {
   final VeyraNativeBindings _bindings;
   bool _isInitialized = false;
   bool _isConnected = false;
+
+  ffi.NativeCallable<ffi.Void Function(ffi.Pointer<Utf8>)>? _statusCallable;
 
   NativeDesktopSession([VeyraNativeBindings? bindings])
       : _bindings = bindings ?? VeyraNativeBindings();
@@ -20,17 +23,48 @@ class NativeDesktopSession {
     return _isInitialized;
   }
 
-  bool connectDevice(String hostIp, [int port = 5150]) {
+  // C-2: connect and perform out-of-band PIN pairing. [onStatus] receives
+  // asynchronous status strings ("waiting_for_challenge", "paired",
+  // "pairing_error:<reason>", ...). Pairing completes on the native thread and
+  // is marshalled back to the Dart isolate.
+  bool connectDevice(
+    String hostIp, {
+    int port = 5150,
+    String pin = '',
+    void Function(String status)? onStatus,
+  }) {
     if (!_isInitialized) {
       initialize();
     }
+    _disposeStatusCallable();
+
+    ffi.NativeCallable<ffi.Void Function(ffi.Pointer<Utf8>)>? callable;
+    if (onStatus != null) {
+      callable = ffi.NativeCallable<ffi.Void Function(ffi.Pointer<Utf8>)>.listener(
+        (ffi.Pointer<Utf8> statusPtr) {
+          try {
+            final status = statusPtr.toDartString();
+            onStatus(status);
+          } catch (_) {}
+        },
+      );
+      _statusCallable = callable;
+    }
+
     final hostPtr = hostIp.toNativeUtf8();
+    final pinPtr = pin.toNativeUtf8();
     try {
-      final res = _bindings.veyraCoreConnectDevice(hostPtr, port);
+      final res = _bindings.veyraCoreConnectDevice(
+        hostPtr,
+        port,
+        pinPtr,
+        callable?.nativeFunction ?? ffi.nullptr,
+      );
       _isConnected = (res == 0);
       return _isConnected;
     } finally {
       calloc.free(hostPtr);
+      calloc.free(pinPtr);
     }
   }
 
@@ -99,9 +133,15 @@ class NativeDesktopSession {
 
   void shutdown() {
     disconnectDevice();
+    _disposeStatusCallable();
     if (_isInitialized) {
       _bindings.veyraCoreShutdown();
       _isInitialized = false;
     }
+  }
+
+  void _disposeStatusCallable() {
+    _statusCallable?.close();
+    _statusCallable = null;
   }
 }

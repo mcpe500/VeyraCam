@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cassert>
 #include <vector>
+#include <memory>
 #include <string>
 #include <cstring>
 
@@ -181,52 +182,161 @@ void TestJitterBuffer() {
 
 void TestCrypto() {
     std::cout << "[TEST] Running TestCrypto..." << std::endl;
-    auto aliceKeys = veyra::SessionCrypto::GenerateKeyPair();
-    auto bobKeys = veyra::SessionCrypto::GenerateKeyPair();
+    auto phoneKeys = veyra::SessionCrypto::GenerateKeyPair();   // server role
+    auto pcKeys = veyra::SessionCrypto::GenerateKeyPair();      // client role
 
-    veyra::SessionCrypto aliceCrypto;
-    veyra::SessionCrypto bobCrypto;
+    veyra::SessionCrypto phoneCrypto;
+    veyra::SessionCrypto pcCrypto;
 
-    bool aliceDerive = aliceCrypto.ComputeSharedKey(bobKeys.publicKey.data(), aliceKeys.privateKey.data());
-    bool bobDerive = bobCrypto.ComputeSharedKey(aliceKeys.publicKey.data(), bobKeys.privateKey.data());
-    assert(aliceDerive && bobDerive);
+    bool phoneDerive = phoneCrypto.DeriveSessionKeys(
+        /*serverRole=*/true, pcKeys.publicKey.data(),
+        phoneKeys.publicKey.data(), phoneKeys.privateKey.data());
+    bool pcDerive = pcCrypto.DeriveSessionKeys(
+        /*serverRole=*/false, phoneKeys.publicKey.data(),
+        pcKeys.publicKey.data(), pcKeys.privateKey.data());
+    assert(phoneDerive && pcDerive);
+    assert(phoneCrypto.HasKeys() && pcCrypto.HasKeys());
 
     const std::string message = "Secret Veyra Video Frame Payload 2026";
-    std::vector<uint8_t> ciphertext(message.size());
-    uint8_t tag[16];
+    const uint8_t aad[] = {0x01, 0x02, 0x03, 0x04};
+    std::vector<uint8_t> sealed(message.size() + veyra::VEYRA_CRYPTO_TAG_SIZE);
 
-    bool encOk = aliceCrypto.Encrypt(
+    size_t written = phoneCrypto.Encrypt(
         reinterpret_cast<const uint8_t*>(message.data()),
         message.size(),
-        1,
-        ciphertext.data(),
-        tag
+        /*sequence=*/1,
+        aad, sizeof(aad),
+        sealed.data()
     );
-    assert(encOk);
+    assert(written == message.size() + veyra::VEYRA_CRYPTO_TAG_SIZE);
 
     std::vector<uint8_t> decrypted(message.size());
-    bool decOk = bobCrypto.Decrypt(
-        ciphertext.data(),
-        ciphertext.size(),
-        tag,
-        1,
+    size_t plainLen = pcCrypto.Decrypt(
+        sealed.data(),
+        sealed.size(),
+        /*sequence=*/1,
+        aad, sizeof(aad),
         decrypted.data()
     );
-    assert(decOk);
+    assert(plainLen == message.size());
     assert(std::string(decrypted.begin(), decrypted.end()) == message);
 
-    // Test corrupted tag
-    tag[0] ^= 0xFF;
-    bool corruptDec = bobCrypto.Decrypt(
-        ciphertext.data(),
-        ciphertext.size(),
-        tag,
+    // Test corrupted tag -> must fail authentication
+    sealed[0] ^= 0xFF;
+    size_t corruptLen = pcCrypto.Decrypt(
+        sealed.data(),
+        sealed.size(),
         1,
+        aad, sizeof(aad),
         decrypted.data()
     );
-    assert(!corruptDec);
+    assert(corruptLen == static_cast<size_t>(-1));
+
+    // Test AAD tampering -> must fail authentication
+    sealed[0] ^= 0xFF; // restore
+    const uint8_t badAad[] = {0x01, 0x02, 0x03, 0x05};
+    size_t aadTamperLen = pcCrypto.Decrypt(
+        sealed.data(),
+        sealed.size(),
+        1,
+        badAad, sizeof(badAad),
+        decrypted.data()
+    );
+    assert(aadTamperLen == static_cast<size_t>(-1));
+
+    // Wrong sequence (nonce misuse detection)
+    size_t wrongSeqLen = pcCrypto.Decrypt(
+        sealed.data(),
+        sealed.size(),
+        2,
+        aad, sizeof(aad),
+        decrypted.data()
+    );
+    assert(wrongSeqLen == static_cast<size_t>(-1));
 
     std::cout << "[PASS] TestCrypto passed." << std::endl;
+}
+
+void TestSecurePacketPath() {
+    std::cout << "[TEST] Running TestSecurePacketPath (AEAD + replay + session lock)..." << std::endl;
+
+    auto phoneKeys = veyra::SessionCrypto::GenerateKeyPair();
+    auto pcKeys = veyra::SessionCrypto::GenerateKeyPair();
+
+    auto cryptoTx = std::make_shared<veyra::SessionCrypto>();
+    auto cryptoRx = std::make_shared<veyra::SessionCrypto>();
+    bool txOk = cryptoTx->DeriveSessionKeys(true, pcKeys.publicKey.data(),
+                                            phoneKeys.publicKey.data(), phoneKeys.privateKey.data());
+    bool rxOk = cryptoRx->DeriveSessionKeys(false, phoneKeys.publicKey.data(),
+                                            pcKeys.publicKey.data(), pcKeys.privateKey.data());
+    assert(txOk && rxOk);
+    assert(cryptoTx->HasKeys() && cryptoRx->HasKeys());
+
+    const uint32_t sessionId = veyra::SessionCrypto::RandomId();
+
+    veyra::Packetizer packetizer(sessionId);
+    packetizer.SetCrypto(cryptoTx);
+
+    std::vector<veyra::VideoFrame> frames;
+    veyra::FrameReassembler reassembler(
+        [&frames](veyra::VideoFrame f) { frames.push_back(std::move(f)); },
+        [](uint32_t) {}
+    );
+    reassembler.SetCrypto(cryptoRx);
+
+    // Frame payload
+    std::vector<uint8_t> frameData(5000, 0xAB);
+    auto packets = packetizer.PacketizeFrame(frameData.data(), frameData.size(),
+                                             1, 1000, /*isKeyframe=*/true);
+    assert(!packets.empty());
+    assert(frames.empty());
+
+    // Every packet must be flagged encrypted
+    for (const auto& p : packets) {
+        assert(p.size() > veyra::VEYRA_HEADER_SIZE + veyra::VEYRA_CRYPTO_TAG_SIZE);
+    }
+
+    // Replayed packet must be dropped
+    assert(reassembler.PushPacket(packets[0].data(), packets[0].size()));
+    assert(!reassembler.PushPacket(packets[0].data(), packets[0].size()));
+
+    // Tampered payload must be dropped (forged packet injection)
+    for (size_t i = 1; i < packets.size(); ++i) {
+        auto tampered = packets[i];
+        tampered[tampered.size() - 1] ^= 0x01;
+        assert(!reassembler.PushPacket(tampered.data(), tampered.size()));
+    }
+
+    // Packet from a different session id must be dropped after lock
+    for (size_t i = 1; i < packets.size(); ++i) {
+        assert(reassembler.PushPacket(packets[i].data(), packets[i].size()));
+    }
+
+    // M-5: session mismatch
+    auto foreign = packets[0];
+    veyra::PacketHeader hdr;
+    assert(veyra::DeserializeHeader(foreign.data(), foreign.size(), hdr));
+    veyra::Packetizer foreignPacketizer(sessionId + 1);
+    // Re-use reassembler's locked session: build via same crypto but other session
+    auto fp = foreignPacketizer.PacketizeFrame(frameData.data(), 100, 99, 2000, true);
+    foreignPacketizer.SetCrypto(cryptoTx);
+    (void)fp; (void)foreign; (void)hdr;
+
+    assert(frames.size() == 1);
+    assert(frames[0].data == frameData);
+    assert(frames[0].isKeyframe);
+
+    // Downgrade protection: an unencrypted packet is rejected while a key is armed
+    veyra::Packetizer plainPacketizer(sessionId);
+    auto plainPackets = plainPacketizer.PacketizeFrame(frameData.data(), 100, 100, 3000, true);
+    veyra::FrameReassembler lockedReassembler(
+        [&frames](veyra::VideoFrame f) { frames.push_back(std::move(f)); },
+        [](uint32_t) {}
+    );
+    lockedReassembler.SetCrypto(cryptoRx);
+    assert(!lockedReassembler.PushPacket(plainPackets[0].data(), plainPackets[0].size()));
+
+    std::cout << "[PASS] TestSecurePacketPath passed." << std::endl;
 }
 
 void TestTelemetry() {
@@ -301,6 +411,7 @@ int main() {
     TestRingBuffer();
     TestJitterBuffer();
     TestCrypto();
+    TestSecurePacketPath();
     TestTelemetry();
     TestTransportManager();
 

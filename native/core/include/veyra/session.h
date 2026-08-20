@@ -58,6 +58,11 @@ public:
     void PauseSession();
     void ResumeSession();
 
+    // Pairing: shared crypto context (X25519-derived session keys). The same
+    // object is handed to the packetizer (tx) and reassembler (rx).
+    std::shared_ptr<SessionCrypto> GetCrypto() { return crypto_; }
+    void SetCrypto(std::shared_ptr<SessionCrypto> crypto);
+
     // Remote camera controls
     void SetZoom(float factor);
     void SetExposure(int32_t step);
@@ -95,7 +100,7 @@ private:
     std::unique_ptr<Packetizer> packetizer_;
     std::unique_ptr<FrameReassembler> reassembler_;
     std::unique_ptr<AdaptiveJitterBuffer> jitterBuffer_;
-    std::unique_ptr<SessionCrypto> crypto_;
+    std::shared_ptr<SessionCrypto> crypto_;
     TelemetryCollector telemetry_;
 
     StateCallback stateCallback_;

@@ -2,6 +2,7 @@ package com.veyra.cam.transport
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.util.Log
@@ -28,6 +29,16 @@ class BluetoothTransport(
     private var outputStream: OutputStream? = null
     private val isRunning = AtomicBoolean(false)
 
+    // H-4: only bonded devices may connect; optionally restricted to an
+    // allowlist of device addresses (populated after C-2 pairing).
+    private val trustedDeviceAddresses = HashSet<String>()
+
+    fun allowDevice(address: String) {
+        synchronized(trustedDeviceAddresses) {
+            trustedDeviceAddresses.add(address)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun start() {
         val adapter = bluetoothAdapter
@@ -46,10 +57,23 @@ class BluetoothTransport(
 
                 while (isRunning.get()) {
                     val socket = serverSocket?.accept() ?: break
+                    val device = socket.remoteDevice
+
+                    // H-4: reject non-bonded devices outright.
+                    val isBonded = device?.bondState == BluetoothDevice.BOND_BONDED
+                    val isTrusted = device == null || synchronized(trustedDeviceAddresses) {
+                        trustedDeviceAddresses.isEmpty() || trustedDeviceAddresses.contains(device.address)
+                    }
+                    if (!isBonded || !isTrusted) {
+                        Log.w(TAG, "Rejected Bluetooth connection from ${device?.address ?: "unknown"} (bonded=$isBonded, trusted=$isTrusted)")
+                        try { socket.close() } catch (_: Exception) {}
+                        continue
+                    }
+
                     clientSocket = socket
                     outputStream = socket.outputStream
                     val inputStream: InputStream = socket.inputStream
-                    Log.i(TAG, "Bluetooth client connected: ${socket.remoteDevice?.name}")
+                    Log.i(TAG, "Bluetooth client connected: ${device?.name} (${device?.address})")
 
                     onConnected()
 

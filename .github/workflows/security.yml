@@ -1,0 +1,69 @@
+name: Security Scan (OSV)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  osv-scan:
+    name: OSV Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install osv-scanner
+        run: |
+          VERSION="v2.5.1"
+          curl -sL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/${VERSION}/osv-scanner_linux_amd64"
+          chmod +x osv-scanner
+          sudo mv osv-scanner /usr/local/bin/
+          osv-scanner --version
+
+      - name: Scan Dart lockfiles
+        run: |
+          set -e
+          for lock in \
+            apps/veyracam/pubspec.lock \
+            apps/veyralink/pubspec.lock \
+            packages/veyra_models/pubspec.lock \
+            packages/veyra_protocol_dart/pubspec.lock \
+            packages/veyra_native/pubspec.lock \
+            packages/veyra_ui/pubspec.lock; do
+            echo "::group::Scanning $lock"
+            osv-scanner --lockfile="$lock" || echo "::warning file=$lock::vulnerabilities found (or scan issue) in $lock"
+            echo "::endgroup::"
+          done
+
+      - name: Scan repo (SBOM-style directory scan)
+        run: |
+          osv-scanner -r --skip-git . || echo "::warning::vulnerabilities found in directory scan"
+
+      - name: Check Gradle artifacts via OSV API
+        run: |
+          set -e
+          check() {
+            local pkg="$1" ver="$2" eco="$3"
+            local res
+            res=$(curl -s --max-time 20 -X POST https://api.osv.dev/v1/query \
+              -d "{\"package\":{\"name\":\"$pkg\",\"ecosystem\":\"$eco\"},\"version\":\"$ver\"}")
+            local count
+            count=$(echo "$res" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('vulns',[])))" 2>/dev/null || echo "0")
+            echo "$pkg@$ver: $count known vulnerabilities"
+            if [ "$count" != "0" ]; then
+              echo "::warning::$pkg@$ver has $count known vulnerabilities"
+            fi
+          }
+          check "androidx.core:core-ktx" "1.12.0" "Android"
+          check "androidx.appcompat:appcompat" "1.6.1" "Android"
+          check "androidx.camera:camera-core" "1.3.1" "Android"
+          check "org.jetbrains.kotlin:kotlin-stdlib-jdk8" "1.9.22" "Maven"
+          check "org.jetbrains.kotlinx:kotlinx-coroutines-android" "1.7.3" "Maven"

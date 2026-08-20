@@ -10,15 +10,17 @@ class DesktopSessionController extends ChangeNotifier {
   bool _isConnecting = false;
   bool _isConnected = false;
   String? _connectedDeviceIp;
+  String? _pairingStatus;
 
   CameraControlsState _controls = const CameraControlsState();
-  StreamProfile _profile = StreamProfile.balanced;
-  TransportType _activeTransport = TransportType.wifiLan;
+  final StreamProfile _profile = StreamProfile.balanced;
+  final TransportType _activeTransport = TransportType.wifiLan;
   TelemetryStats _telemetry = const TelemetryStats();
 
   bool get isConnecting => _isConnecting;
   bool get isConnected => _isConnected;
   String? get connectedDeviceIp => _connectedDeviceIp;
+  String? get pairingStatus => _pairingStatus;
   CameraControlsState get controls => _controls;
   StreamProfile get profile => _profile;
   TransportType get activeTransport => _activeTransport;
@@ -29,17 +31,25 @@ class DesktopSessionController extends ChangeNotifier {
     _session.initialize();
   }
 
-  Future<bool> connectDevice(String hostIp, [int port = 5150]) async {
+  Future<bool> connectDevice(String hostIp,
+      {int port = 5150, String pin = ''}) async {
     if (_isConnecting || _isConnected) return false;
     _isConnecting = true;
+    _pairingStatus = 'connecting';
     notifyListeners();
 
     try {
-      final success = _session.connectDevice(hostIp, port);
+      final success = _session.connectDevice(
+        hostIp,
+        port: port,
+        pin: pin,
+        onStatus: _handlePairingStatus,
+      );
       _isConnected = success;
       _isConnecting = false;
       if (success) {
         _connectedDeviceIp = hostIp;
+        _pairingStatus = 'paired';
         _startTelemetryPolling();
       }
       notifyListeners();
@@ -47,10 +57,26 @@ class DesktopSessionController extends ChangeNotifier {
     } catch (e) {
       _isConnecting = false;
       _isConnected = false;
+      _pairingStatus = 'error';
       notifyListeners();
       debugPrint('Failed to connect: $e');
       return false;
     }
+  }
+
+  // Called from the FFI status callback (marshalled onto the isolate loop).
+  void _handlePairingStatus(String status) {
+    _pairingStatus = status;
+    if (status == 'paired' && !_isConnected) {
+      _isConnected = true;
+      _isConnecting = false;
+      _startTelemetryPolling();
+    }
+    if (status.startsWith('pairing_error')) {
+      _isConnecting = false;
+      _isConnected = false;
+    }
+    notifyListeners();
   }
 
   void disconnectDevice() {

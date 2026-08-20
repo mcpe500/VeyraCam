@@ -89,6 +89,10 @@ void TcpControlClient::ReadLoop() {
     char buffer[4096];
     std::string accumulated;
 
+    // L-2: cap the per-line buffer so a malicious peer cannot exhaust memory
+    // by sending an endless stream without newlines.
+    constexpr size_t kMaxLineLength = 64 * 1024;
+
     while (isConnected_) {
 #ifdef _WIN32
         SOCKET s = static_cast<SOCKET>(socket_);
@@ -101,6 +105,12 @@ void TcpControlClient::ReadLoop() {
 
         buffer[bytes] = '\0';
         accumulated += buffer;
+
+        if (accumulated.size() > kMaxLineLength) {
+            std::cerr << "[TcpControlClient] Control line exceeded " << kMaxLineLength
+                      << " bytes; dropping connection" << std::endl;
+            break;
+        }
 
         size_t pos;
         while ((pos = accumulated.find('\n')) != std::string::npos) {

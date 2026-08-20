@@ -47,8 +47,7 @@ void TelemetryCollector::SetDeviceThermal(int8_t celsius, uint8_t batteryPercent
     batteryPct_ = batteryPercent;
 }
 
-LatencyBreakdown TelemetryCollector::GetAverageLatencyBreakdown() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+LatencyBreakdown TelemetryCollector::ComputeLatencyBreakdownLocked() const {
     LatencyBreakdown bd{};
     if (timingHistory_.empty()) {
         return bd;
@@ -87,6 +86,11 @@ LatencyBreakdown TelemetryCollector::GetAverageLatencyBreakdown() const {
     return bd;
 }
 
+LatencyBreakdown TelemetryCollector::GetAverageLatencyBreakdown() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return ComputeLatencyBreakdownLocked();
+}
+
 TelemetryStatsPayload TelemetryCollector::GetCurrentStatsPayload(uint8_t activeTransport, uint8_t activeProfile) const {
     std::lock_guard<std::mutex> lock(mutex_);
     TelemetryStatsPayload stats{};
@@ -106,7 +110,7 @@ TelemetryStatsPayload TelemetryCollector::GetCurrentStatsPayload(uint8_t activeT
         stats.packetLossPercent = (static_cast<float>(lostPacketsCount_) / totalPacketsCount_) * 100.0f;
     }
 
-    auto bd = GetAverageLatencyBreakdown();
+    auto bd = ComputeLatencyBreakdownLocked();
     stats.latencyMs = bd.endToEndLatencyMs;
     stats.batteryPercent = batteryPct_;
     stats.temperatureCelsius = temperatureC_;

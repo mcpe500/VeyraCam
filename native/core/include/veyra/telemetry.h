@@ -46,6 +46,9 @@ public:
     void Reset();
 
 private:
+    // Caller must hold mutex_.
+    LatencyBreakdown ComputeLatencyBreakdownLocked() const;
+
     mutable std::mutex mutex_;
     std::deque<StageTiming> timingHistory_;
     std::deque<std::pair<uint64_t, size_t>> bytesHistory_;

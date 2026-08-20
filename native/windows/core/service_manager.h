@@ -4,8 +4,10 @@
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <functional>
 #include "veyra/protocol.h"
 #include "veyra/packetizer.h"
+#include "veyra/crypto.h"
 #include "veyra/jitter_buffer.h"
 #include "veyra/telemetry.h"
 #include "../network/iocp_udp_server.h"
@@ -19,10 +21,14 @@ namespace veyra {
 
 class ServiceManager {
 public:
+    // C-2: status events surfaced to the FFI layer.
+    using StatusCallback = std::function<void(const char* status)>;
+
     static ServiceManager& Instance();
 
     bool Initialize();
-    bool ConnectDevice(const std::string& hostIp, uint16_t controlPort = 5150);
+    bool ConnectDevice(const std::string& hostIp, uint16_t controlPort,
+                       const std::string& pin, StatusCallback onStatus);
     void DisconnectDevice();
 
     void SetZoom(float zoom);
@@ -38,6 +44,13 @@ public:
     void Shutdown();
 
 private:
+    enum class PairingState {
+        DISCONNECTED,
+        AWAITING_CHALLENGE,
+        AWAITING_PAIRING_OK,
+        PAIRED
+    };
+
     ServiceManager();
     ~ServiceManager();
 
@@ -45,8 +58,19 @@ private:
     void OnTcpControlMessage(const std::string& message);
     void OnFrameReassembled(VideoFrame frame);
 
+    void HandlePairingChallenge(const std::string& serverPubKeyB64, uint32_t sessionId);
+    void HandlePairingResult(const std::string& token, const std::string& errorReason);
+    std::string BuildControlMessage(const std::string& type, const std::string& payloadJson) const;
+
     std::atomic<bool> isStreaming_{false};
     std::mutex mutex_;
+
+    PairingState pairingState_{PairingState::DISCONNECTED};
+    std::string pin_;
+    std::string token_;
+    std::string hostIp_;
+    std::shared_ptr<veyra::SessionCrypto> crypto_;
+    StatusCallback statusCallback_;
 
     std::unique_ptr<IocpUdpServer> udpServer_;
     std::unique_ptr<TcpControlClient> tcpClient_;

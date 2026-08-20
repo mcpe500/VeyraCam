@@ -10,9 +10,14 @@ VEYRA_API int veyra_core_init(void) {
     return ok ? 0 : -1;
 }
 
-VEYRA_API int veyra_core_connect_device(const char* host_ip, uint16_t port) {
-    if (!host_ip) return -1;
-    bool ok = veyra::ServiceManager::Instance().ConnectDevice(host_ip, port);
+VEYRA_API int veyra_core_connect_device(const char* host_ip, uint16_t port,
+                                        const char* pin,
+                                        void (*status_callback)(const char* status)) {
+    if (!host_ip || !pin) return -1;
+    bool ok = veyra::ServiceManager::Instance().ConnectDevice(
+        host_ip, port, pin,
+        status_callback ? [status_callback](const char* s) { status_callback(s); }
+                        : veyra::ServiceManager::StatusCallback{});
     return ok ? 0 : -1;
 }
 
@@ -49,18 +54,19 @@ VEYRA_API uint64_t veyra_core_get_shared_texture_handle(void) {
 }
 
 VEYRA_API const char* veyra_core_get_telemetry_json(void) {
+    // L-4: bounded static buffer avoids unbounded per-poll heap allocations.
+    static thread_local char buffer[4096];
     std::string json = veyra::ServiceManager::Instance().GetTelemetryJson();
-    char* buffer = static_cast<char*>(malloc(json.length() + 1));
-    if (buffer) {
-        memcpy(buffer, json.c_str(), json.length() + 1);
+    if (json.size() >= sizeof(buffer)) {
+        json = json.substr(0, sizeof(buffer) - 1);
     }
+    memcpy(buffer, json.c_str(), json.size() + 1);
     return buffer;
 }
 
 VEYRA_API void veyra_core_free_string(const char* str) {
-    if (str) {
-        free(const_cast<char*>(str));
-    }
+    // Telemetry now uses a static buffer; kept for ABI compatibility (no-op).
+    (void)str;
 }
 
 VEYRA_API void veyra_core_shutdown(void) {

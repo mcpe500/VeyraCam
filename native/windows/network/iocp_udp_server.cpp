@@ -48,8 +48,6 @@ bool IocpUdpServer::Start(PacketReceivedCallback onPacketReceived) {
         socket_ = INVALID_SOCKET;
         return false;
     }
-
-    iocp_ = CreateIoCompletionPort(reinterpret_cast<HANDLE>(socket_), nullptr, 0, 0);
 #else
     socket_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (socket_ < 0) return false;
@@ -75,29 +73,49 @@ bool IocpUdpServer::Start(PacketReceivedCallback onPacketReceived) {
     return true;
 }
 
+void IocpUdpServer::SetExpectedPeer(const std::string& hostIp) {
+    std::lock_guard<std::mutex> lock(peerMutex_);
+    expectedPeer_ = hostIp;
+    expectedPeerAddr_ = 0;
+    if (!hostIp.empty()) {
+        in_addr addr{};
+        if (inet_pton(AF_INET, hostIp.c_str(), &addr) == 1) {
+            expectedPeerAddr_ = addr.s_addr;
+        }
+    }
+}
+
 void IocpUdpServer::WorkerLoop() {
     uint8_t buffer[VEYRA_MAX_PACKET_SIZE];
-#ifdef _WIN32
     while (isRunning_) {
         sockaddr_in clientAddr = {};
         int clientLen = sizeof(clientAddr);
-        int bytes = recvfrom(socket_, reinterpret_cast<char*>(buffer), sizeof(buffer), 0,
-                             reinterpret_cast<sockaddr*>(&clientAddr), &clientLen);
-        if (bytes > 0 && callback_) {
-            callback_(buffer, static_cast<size_t>(bytes));
-        }
-    }
+        int bytes = static_cast<int>(recvfrom(
+#ifdef _WIN32
+            socket_,
 #else
-    while (isRunning_) {
-        sockaddr_in clientAddr = {};
-        socklen_t clientLen = sizeof(clientAddr);
-        ssize_t bytes = recvfrom(socket_, buffer, sizeof(buffer), 0,
-                                 reinterpret_cast<sockaddr*>(&clientAddr), &clientLen);
-        if (bytes > 0 && callback_) {
-            callback_(buffer, static_cast<size_t>(bytes));
-        }
-    }
+            static_cast<int>(socket_),
 #endif
+            reinterpret_cast<char*>(buffer), sizeof(buffer), 0,
+            reinterpret_cast<sockaddr*>(&clientAddr), &clientLen));
+        if (bytes <= 0 || !callback_) {
+            continue;
+        }
+
+        // H-3: reject media packets from any peer other than the paired device.
+        uint32_t peerAddr = 0;
+        {
+            std::lock_guard<std::mutex> lock(peerMutex_);
+            if (expectedPeerAddr_ != 0) {
+                peerAddr = expectedPeerAddr_;
+            }
+        }
+        if (peerAddr != 0 && clientAddr.sin_addr.s_addr != peerAddr) {
+            continue; // drop packet from unpaired source
+        }
+
+        callback_(buffer, static_cast<size_t>(bytes));
+    }
 }
 
 void IocpUdpServer::Stop() {
@@ -108,10 +126,6 @@ void IocpUdpServer::Stop() {
     if (socket_ != INVALID_SOCKET) {
         closesocket(socket_);
         socket_ = INVALID_SOCKET;
-    }
-    if (iocp_) {
-        CloseHandle(iocp_);
-        iocp_ = nullptr;
     }
     WSACleanup();
 #else

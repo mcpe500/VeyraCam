@@ -12,7 +12,10 @@ object VeyraNativeBridge {
     }
 
     external fun nativeCreateSession(sessionId: Int): Long
+    external fun nativeGetSessionId(handle: Long): Int
     external fun nativeDestroySession(handle: Long)
+    external fun nativeBeginPairing(handle: Long): String
+    external fun nativeCompletePairing(handle: Long, clientPubKeyB64: String): Boolean
     external fun nativeConfigureUdpDestination(handle: Long, host: String, port: Int): Boolean
     external fun nativeSendVideoNal(
         handle: Long,

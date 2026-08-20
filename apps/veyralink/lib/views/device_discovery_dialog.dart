@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:veyra_ui/veyra_ui.dart';
 
 class DeviceDiscoveryDialog extends StatefulWidget {
-  final Function(String ip, int port) onConnect;
+  final Function(String ip, int port, String pin) onConnect;
 
   const DeviceDiscoveryDialog({super.key, required this.onConnect});
 
@@ -13,6 +13,7 @@ class DeviceDiscoveryDialog extends StatefulWidget {
 class _DeviceDiscoveryDialogState extends State<DeviceDiscoveryDialog> {
   final TextEditingController _ipController = TextEditingController(text: '192.168.1.');
   final TextEditingController _portController = TextEditingController(text: '5150');
+  final TextEditingController _pinController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +37,7 @@ class _DeviceDiscoveryDialogState extends State<DeviceDiscoveryDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Enter the IP address displayed on your phone:',
+              'Enter the IP address and 6-digit pairing PIN shown on your phone:',
               style: TextStyle(color: VeyraColors.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 16),
@@ -60,6 +61,20 @@ class _DeviceDiscoveryDialogState extends State<DeviceDiscoveryDialog> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Pairing PIN',
+                hintText: '6-digit PIN from phone screen',
+                prefixIcon: Icon(Icons.pin, color: VeyraColors.primary),
+                border: OutlineInputBorder(),
+                counterText: '',
+              ),
+            ),
           ],
         ),
       ),
@@ -72,9 +87,16 @@ class _DeviceDiscoveryDialogState extends State<DeviceDiscoveryDialog> {
           onPressed: () {
             final ip = _ipController.text.trim();
             final port = int.tryParse(_portController.text.trim()) ?? 5150;
-            if (ip.isNotEmpty) {
+            final pin = _pinController.text.trim();
+            if (ip.isNotEmpty && pin.length == 6) {
               Navigator.pop(context);
-              widget.onConnect(ip, port);
+              widget.onConnect(ip, port, pin);
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Enter a valid IP address and 6-digit PIN'),
+                ),
+              );
             }
           },
           style: ElevatedButton.styleFrom(

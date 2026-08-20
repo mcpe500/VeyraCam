@@ -155,8 +155,8 @@ class _DesktopMainScreenState extends State<DesktopMainScreen> {
                 showDialog(
                   context: context,
                   builder: (ctx) => DeviceDiscoveryDialog(
-                    onConnect: (ip, port) {
-                      _controller.connectDevice(ip, port);
+                    onConnect: (ip, port, pin) {
+                      _controller.connectDevice(ip, port: port, pin: pin);
                     },
                   ),
                 );

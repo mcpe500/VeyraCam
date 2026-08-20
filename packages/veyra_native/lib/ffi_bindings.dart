@@ -5,8 +5,15 @@ import 'package:ffi/ffi.dart';
 typedef VeyraCoreInitC = ffi.Int32 Function();
 typedef VeyraCoreInitDart = int Function();
 
-typedef VeyraCoreConnectDeviceC = ffi.Int32 Function(ffi.Pointer<Utf8> hostIp, ffi.Uint16 port);
-typedef VeyraCoreConnectDeviceDart = int Function(ffi.Pointer<Utf8> hostIp, int port);
+typedef VeyraCoreConnectStatusCallbackC = ffi.Void Function(ffi.Pointer<Utf8> status);
+typedef VeyraCoreConnectStatusCallbackDart = void Function(ffi.Pointer<Utf8> status);
+
+typedef VeyraCoreConnectDeviceC = ffi.Int32 Function(
+    ffi.Pointer<Utf8> hostIp, ffi.Uint16 port, ffi.Pointer<Utf8> pin,
+    ffi.Pointer<ffi.NativeFunction<VeyraCoreConnectStatusCallbackC>> statusCallback);
+typedef VeyraCoreConnectDeviceDart = int Function(
+    ffi.Pointer<Utf8> hostIp, int port, ffi.Pointer<Utf8> pin,
+    ffi.Pointer<ffi.NativeFunction<VeyraCoreConnectStatusCallbackC>> statusCallback);
 
 typedef VeyraCoreDisconnectDeviceC = ffi.Void Function();
 typedef VeyraCoreDisconnectDeviceDart = void Function();

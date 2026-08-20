@@ -2,9 +2,10 @@ name: veyra_protocol_dart
 description: Dart protocol message encoders, decoders, and constants for Veyra Link Protocol.
 version: 1.0.0
 homepage: https://github.com/veyra/veyra
+publish_to: none
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.3.0 <4.0.0'
 
 dependencies:
   meta: ^1.11.0

@@ -125,6 +125,14 @@ class FlutterBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
                 VeyraStreamingService.instance?.requestIdr()
                 result.success(true)
             }
+            "getPairingPin" -> {
+                val pin = VeyraStreamingService.instance?.getPairingPin()
+                if (pin != null) {
+                    result.success(pin)
+                } else {
+                    result.success(null)
+                }
+            }
             else -> result.notImplemented()
         }
     }

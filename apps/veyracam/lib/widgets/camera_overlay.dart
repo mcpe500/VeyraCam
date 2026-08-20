@@ -77,12 +77,49 @@ class _CameraOverlayState extends State<CameraOverlay> {
               top: 70,
               left: 16,
               right: 16,
-              child: DiagnosticHud(
-                stats: c.telemetry,
-                isExpanded: _isHudExpanded,
-                onToggleExpand: () {
-                  setState(() => _isHudExpanded = !_isHudExpanded);
-                },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (c.pairingPin != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: VeyraColors.primary,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withAlpha(80),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.pin, color: Colors.black, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Pairing PIN: ${c.pairingPin}',
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  DiagnosticHud(
+                    stats: c.telemetry,
+                    isExpanded: _isHudExpanded,
+                    onToggleExpand: () {
+                      setState(() => _isHudExpanded = !_isHudExpanded);
+                    },
+                  ),
+                ],
               ),
             ),
 

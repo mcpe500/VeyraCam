@@ -115,18 +115,30 @@ int main() {
 
     veyra::SessionCrypto senderCrypto;
     veyra::SessionCrypto receiverCrypto;
-    assert(senderCrypto.ComputeSharedKey(receiverKeys.publicKey.data(), senderKeys.privateKey.data()));
-    assert(receiverCrypto.ComputeSharedKey(senderKeys.publicKey.data(), receiverKeys.privateKey.data()));
+    bool senderOk = senderCrypto.DeriveSessionKeys(/*serverRole=*/true,
+                                                   receiverKeys.publicKey.data(),
+                                                   senderKeys.publicKey.data(),
+                                                   senderKeys.privateKey.data());
+    bool receiverOk = receiverCrypto.DeriveSessionKeys(/*serverRole=*/false,
+                                                       senderKeys.publicKey.data(),
+                                                       receiverKeys.publicKey.data(),
+                                                       receiverKeys.privateKey.data());
+    assert(senderOk && receiverOk);
+    assert(senderCrypto.HasKeys() && receiverCrypto.HasKeys());
 
     std::string testPayload = "Veyra Secure Transport Stream - 100% Verified";
     std::vector<uint8_t> plainText(testPayload.begin(), testPayload.end());
-    std::vector<uint8_t> cipherText(plainText.size());
-    std::array<uint8_t, 16> tag{};
+    std::vector<uint8_t> sealed(plainText.size() + veyra::VEYRA_CRYPTO_TAG_SIZE);
+    const uint8_t aad[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
 
-    assert(senderCrypto.Encrypt(plainText.data(), plainText.size(), 1, cipherText.data(), tag.data()));
+    size_t written = senderCrypto.Encrypt(plainText.data(), plainText.size(), 1,
+                                          aad, sizeof(aad), sealed.data());
+    assert(written == plainText.size() + veyra::VEYRA_CRYPTO_TAG_SIZE);
 
     std::vector<uint8_t> decrypted(plainText.size());
-    assert(receiverCrypto.Decrypt(cipherText.data(), cipherText.size(), tag.data(), 1, decrypted.data()));
+    size_t plainLen = receiverCrypto.Decrypt(sealed.data(), sealed.size(), 1,
+                                             aad, sizeof(aad), decrypted.data());
+    assert(plainLen == plainText.size());
 
     std::string decryptedStr(decrypted.begin(), decrypted.end());
     assert(decryptedStr == testPayload);

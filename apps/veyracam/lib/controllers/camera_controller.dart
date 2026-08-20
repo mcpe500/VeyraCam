@@ -11,6 +11,8 @@ class VeyraCamController extends ChangeNotifier {
   int? _textureId;
   bool _isStreaming = false;
   bool _isConnecting = false;
+  String? _pairingPin;
+  Timer? _pairingPinTimer;
   StreamSubscription? _telemetrySub;
 
   CameraControlsState _controls = const CameraControlsState();
@@ -21,6 +23,7 @@ class VeyraCamController extends ChangeNotifier {
   int? get textureId => _textureId;
   bool get isStreaming => _isStreaming;
   bool get isConnecting => _isConnecting;
+  String? get pairingPin => _pairingPin;
   CameraControlsState get controls => _controls;
   StreamProfile get profile => _profile;
   TransportType get transport => _transport;
@@ -71,6 +74,17 @@ class VeyraCamController extends ChangeNotifier {
         } catch (_) {}
       }
     });
+
+    // C-2: poll the pairing PIN so the user can read it off the phone screen.
+    _pairingPinTimer?.cancel();
+    _pairingPinTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _controlChannel.invokeMethod<String>('getPairingPin').then((pin) {
+        if (_pairingPin != pin) {
+          _pairingPin = pin;
+          notifyListeners();
+        }
+      }).catchError((_) {});
+    });
   }
 
   Future<void> stopStreaming() async {
@@ -80,6 +94,9 @@ class VeyraCamController extends ChangeNotifier {
     } catch (_) {}
     _telemetrySub?.cancel();
     _telemetrySub = null;
+    _pairingPinTimer?.cancel();
+    _pairingPinTimer = null;
+    _pairingPin = null;
     _isStreaming = false;
     _textureId = null;
     notifyListeners();
@@ -146,6 +163,7 @@ class VeyraCamController extends ChangeNotifier {
   @override
   void dispose() {
     _telemetrySub?.cancel();
+    _pairingPinTimer?.cancel();
     super.dispose();
   }
 }

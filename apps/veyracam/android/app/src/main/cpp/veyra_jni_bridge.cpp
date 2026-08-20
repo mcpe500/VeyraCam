@@ -14,6 +14,7 @@
 #include "veyra/packetizer.h"
 #include "veyra/session.h"
 #include "veyra/telemetry.h"
+#include "veyra/crypto.h"
 
 #define TAG "VeyraJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -65,6 +66,44 @@ public:
         udpHost_ = host;
         udpPort_ = port;
         LOGI("Configured native UDP destination to %s:%d", host.c_str(), port);
+        return true;
+    }
+
+    // C-2: generate an ephemeral X25519 keypair for this pairing round.
+    std::string BeginPairing() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pendingKeys_ = veyra::SessionCrypto::GenerateKeyPair();
+        crypto_ = std::make_shared<veyra::SessionCrypto>();
+        return veyra::SessionCrypto::Base64Encode(
+            pendingKeys_.publicKey.data(), pendingKeys_.publicKey.size());
+    }
+
+    // C-2: derive session keys (server role = phone) from the client's
+    // public key and arm per-packet AEAD on the packetizer.
+    bool CompletePairing(const std::string& clientPubKeyB64) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!crypto_) return false;
+
+        auto clientPub = veyra::SessionCrypto::Base64Decode(clientPubKeyB64);
+        if (clientPub.size() != veyra::VEYRA_PUBLIC_KEY_SIZE) {
+            LOGE("Pairing rejected: client public key has invalid size %zu", clientPub.size());
+            return false;
+        }
+
+        bool ok = crypto_->DeriveSessionKeys(
+            /*serverRole=*/true,
+            clientPub.data(),
+            pendingKeys_.publicKey.data(),
+            pendingKeys_.privateKey.data());
+        if (!ok || !crypto_->IsKeySet()) {
+            LOGE("Pairing rejected: key derivation failed");
+            crypto_->Reset();
+            crypto_.reset();
+            return false;
+        }
+
+        packetizer_->SetCrypto(crypto_);
+        LOGI("Pairing complete: AEAD armed for session %u", sessionId_);
         return true;
     }
 
@@ -126,6 +165,10 @@ private:
     uint32_t frameCounter_{0};
     uint32_t audioCounter_{0};
 
+    // C-2: pairing state (server role: phone owns the ephemeral keypair).
+    veyra::KeyPair pendingKeys_{};
+    std::shared_ptr<veyra::SessionCrypto> crypto_;
+
     int udpSocket_{-1};
     std::string udpHost_;
     int udpPort_{0};
@@ -139,10 +182,43 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL
 Java_com_veyra_cam_service_VeyraNativeBridge_nativeCreateSession(
-    JNIEnv* env, jobject thiz, jint sessionId) {
-    auto* ctx = new NativeSenderContext(static_cast<uint32_t>(sessionId));
+    JNIEnv* env, jobject thiz, jint /*sessionId*/) {
+    // M-4: never trust a caller-provided (potentially time-derived) session id.
+    const uint32_t sessionId = veyra::SessionCrypto::RandomId();
+    auto* ctx = new NativeSenderContext(sessionId);
     LOGI("Created NativeSenderContext for sessionId: %u", sessionId);
     return reinterpret_cast<jlong>(ctx);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_veyra_cam_service_VeyraNativeBridge_nativeGetSessionId(
+    JNIEnv* env, jobject thiz, jlong handle) {
+    if (handle == 0) return 0;
+    auto* ctx = reinterpret_cast<NativeSenderContext*>(handle);
+    return static_cast<jint>(ctx->GetSessionId());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_veyra_cam_service_VeyraNativeBridge_nativeBeginPairing(
+    JNIEnv* env, jobject thiz, jlong handle) {
+    if (handle == 0) return env->NewStringUTF("");
+    auto* ctx = reinterpret_cast<NativeSenderContext*>(handle);
+    std::string pubKeyB64 = ctx->BeginPairing();
+    return env->NewStringUTF(pubKeyB64.c_str());
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_veyra_cam_service_VeyraNativeBridge_nativeCompletePairing(
+    JNIEnv* env, jobject thiz, jlong handle, jstring clientPubKeyB64) {
+    if (handle == 0) return JNI_FALSE;
+    auto* ctx = reinterpret_cast<NativeSenderContext*>(handle);
+
+    const char* b64 = env->GetStringUTFChars(clientPubKeyB64, nullptr);
+    std::string clientKey(b64);
+    env->ReleaseStringUTFChars(clientPubKeyB64, b64);
+
+    bool ok = ctx->CompletePairing(clientKey);
+    return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

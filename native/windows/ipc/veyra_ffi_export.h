@@ -13,7 +13,12 @@ extern "C" {
 #endif
 
 VEYRA_API int veyra_core_init(void);
-VEYRA_API int veyra_core_connect_device(const char* host_ip, uint16_t port);
+// C-2: connect + out-of-band PIN pairing. status_callback receives events:
+//   "waiting_for_challenge", "paired", "connect_failed",
+//   "pairing_error:<reason>" (invalid_pin/locked/invalid_key/...).
+VEYRA_API int veyra_core_connect_device(const char* host_ip, uint16_t port,
+                                        const char* pin,
+                                        void (*status_callback)(const char* status));
 VEYRA_API void veyra_core_disconnect_device(void);
 
 VEYRA_API void veyra_core_set_zoom(float zoom);
