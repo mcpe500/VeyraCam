@@ -71,6 +71,50 @@ class _CameraOverlayState extends State<CameraOverlay> {
             ),
           ),
 
+          // Error banner (permission / codec failure)
+          if (c.lastError != null && !c.isStreaming)
+            Positioned(
+              top: 70,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: VeyraColors.error.withAlpha(230),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        c.lastError!,
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (c.lastError!.contains('Settings'))
+                      TextButton(
+                        onPressed: () => c.openSettings(),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Settings', style: TextStyle(color: Colors.white, fontSize: 12)),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white70, size: 16),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => c.clearError(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           // Diagnostic HUD
           if (c.isStreaming)
             Positioned(

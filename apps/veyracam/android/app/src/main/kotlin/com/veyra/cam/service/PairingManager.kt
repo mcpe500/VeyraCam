@@ -1,9 +1,9 @@
 package com.veyra.cam.service
 
+import android.util.Base64
 import android.util.Log
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.Base64
 
 /**
  * C-2: out-of-band pairing state machine (server side = phone).
@@ -82,7 +82,7 @@ class PairingManager {
         // Success: mint a fresh token and move to PAIRED.
         val tokenBytes = ByteArray(32)
         secureRandom.nextBytes(tokenBytes)
-        authToken = Base64.getEncoder().encodeToString(tokenBytes)
+        authToken = Base64.encodeToString(tokenBytes, Base64.NO_WRAP)
         state = State.PAIRED
         failedAttempts = 0
         Log.i(TAG, "Pairing complete")

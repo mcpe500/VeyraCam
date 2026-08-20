@@ -53,7 +53,12 @@ class WifiP2pTransport(
             }
         }
 
-        context.registerReceiver(receiver, intentFilter)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(receiver, intentFilter)
+        }
         startDiscovery()
     }
 

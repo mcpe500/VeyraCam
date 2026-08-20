@@ -1,7 +1,7 @@
 name: veyracam
 description: VeyraCam - Transform your Android smartphone into a high-performance PC virtual webcam.
 publish_to: 'none'
-version: 1.0.1+1
+version: 1.0.2+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -11,6 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   meta: ^1.11.0
+  permission_handler: ^11.3.1
   veyra_models:
     path: ../../packages/veyra_models
   veyra_protocol_dart:

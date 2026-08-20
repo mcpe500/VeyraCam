@@ -50,9 +50,14 @@ class ThermalController(
     }
 
     fun start() {
-        // Register battery temperature receiver
+        // Register battery temperature receiver (sticky, not exported)
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        context.registerReceiver(batteryReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(batteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(batteryReceiver, filter)
+        }
 
         // Register modern PowerManager thermal listener if API 29+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

@@ -1,11 +1,13 @@
 package com.veyra.cam.service
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.*
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
 import android.net.wifi.WifiManager
 import android.os.Binder
@@ -14,6 +16,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.veyra.cam.audio.AudioEngine
 import com.veyra.cam.camera.Camera2Controller
 import com.veyra.cam.camera.CameraCapabilities
@@ -93,7 +96,12 @@ class VeyraStreamingService : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
         }
-        registerReceiver(screenStateReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(screenStateReceiver, filter)
+        }
 
         // Acquire WakeLock & WifiLock
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -121,6 +129,12 @@ class VeyraStreamingService : Service() {
         return START_STICKY
     }
 
+    private fun hasRequiredPermissions(): Boolean {
+        val cam = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        return cam && mic
+    }
+
     @SuppressLint("MissingPermission")
     fun startStreaming(
         surfaceTexture: SurfaceTexture?,
@@ -132,6 +146,11 @@ class VeyraStreamingService : Service() {
         onStarted: (() -> Unit)? = null
     ) {
         if (isStreaming) return
+        // Defensive permission check — Dart should have requested already, but guard against SecurityException.
+        if (!hasRequiredPermissions()) {
+            Log.e(TAG, "Missing CAMERA or RECORD_AUDIO permission, aborting startStreaming")
+            throw SecurityException("CAMERA/RECORD_AUDIO permission not granted")
+        }
         isStreaming = true
         previewTexture = surfaceTexture
         isBackCamera = facingBack
@@ -140,96 +159,120 @@ class VeyraStreamingService : Service() {
         currentFps = fps
         currentBitrateBps = bitrateBps
 
-        // 1. Create native core session (M-4: session id generated via CSPRNG
-        // inside the native layer, never from wall-clock time).
-        nativeHandle = VeyraNativeBridge.nativeCreateSession(0)
-        sessionId = VeyraNativeBridge.nativeGetSessionId(nativeHandle)
-
-        // 2. Initialize thermal management
-        thermalController = ThermalController(this) { recommendation ->
-            onThermalAdjustment(recommendation)
-        }.apply { start() }
-
-        // 3. Initialize H.264 Encoder
-        encoder = H264Encoder(
-            width = currentWidth,
-            height = currentHeight,
-            fps = currentFps,
-            bitrateBps = currentBitrateBps,
-            nativeHandleProvider = { nativeHandle }
-        )
-        val codecSurface = encoder!!.start()
-
-        // 4. Initialize Camera2 Controller
-        cameraController = Camera2Controller(this).apply {
-            openCamera(
-                facingBack = isBackCamera,
-                targetWidth = currentWidth,
-                targetHeight = currentHeight,
-                fps = currentFps,
-                codecSurface = codecSurface,
-                previewSurfaceTexture = previewTexture,
-                onOpened = {
-                    Log.i(TAG, "Camera pipeline ready and streaming")
-                    onStarted?.invoke()
-                }
-            )
-        }
-
-        // 5. Initialize Audio Engine
-        audioEngine = AudioEngine(
-            sampleRate = 48000,
-            channelCount = 1,
-            bitrateBps = 32000,
-            nativeHandleProvider = { nativeHandle }
-        ).apply { start() }
-
-        // 6. Initialize Network & Transports (C-2: pairing-gated control channel)
-        udpTransport = UdpTransport(
-            controlPort = 5150,
-            pairingManager = pairingManager,
-            getServerPublicKey = {
-                if (nativeHandle != 0L) VeyraNativeBridge.nativeBeginPairing(nativeHandle) else ""
-            },
-            getSessionId = { sessionId },
-            onControlCommandReceived = { opCode, payload ->
-                handleControlCommand(opCode, payload)
-            },
-            onAuthenticated = { ip, udpPort ->
-                Log.i(TAG, "Client paired & authenticated: $ip:$udpPort")
-                clientIp = ip
-                VeyraNativeBridge.nativeConfigureUdpDestination(nativeHandle, ip, udpPort)
-                updateNotification("Streaming to $ip")
-            },
-            onPinRequired = { pin ->
-                Log.i(TAG, "Pairing PIN: $pin")
-                updateNotification("Pair with VeyraLink using PIN $pin")
-            },
-            onPairingFailed = { reason ->
-                Log.w(TAG, "Pairing failed: $reason")
-                updateNotification("Pairing failed")
-            },
-            onCompletePairing = { clientPubKey ->
-                VeyraNativeBridge.nativeCompletePairing(nativeHandle, clientPubKey)
-            },
-            onClientDisconnected = {
-                clientIp = null
-                pairingManager.reset()
-                updateNotification("Waiting for connection...")
+        try {
+            // 1. Create native core session (M-4: session id generated via CSPRNG
+            // inside the native layer, never from wall-clock time).
+            try {
+                nativeHandle = VeyraNativeBridge.nativeCreateSession(0)
+                if (nativeHandle == 0L) throw RuntimeException("nativeCreateSession returned 0")
+                sessionId = try { VeyraNativeBridge.nativeGetSessionId(nativeHandle) } catch (e: Exception) { 0 }
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "Native library not loaded", e)
+                throw RuntimeException("Native JNI not available: ${e.message}", e)
             }
-        ).apply { start() }
 
-        bluetoothTransport = BluetoothTransport(
-            onDataReceived = { data, len -> },
-            onConnected = { Log.i(TAG, "Bluetooth transport active") },
-            onDisconnected = { Log.i(TAG, "Bluetooth transport disconnected") }
-        ).apply { start() }
+            // 2. Initialize thermal management
+            thermalController = ThermalController(this) { recommendation ->
+                onThermalAdjustment(recommendation)
+            }.apply { start() }
 
-        usbTransport = UsbTransport(this) { connected ->
-            Log.i(TAG, "USB status changed: $connected")
-        }.apply { start() }
+            // 3. Initialize H.264 Encoder (may throw if codec unavailable)
+            encoder = H264Encoder(
+                width = currentWidth,
+                height = currentHeight,
+                fps = currentFps,
+                bitrateBps = currentBitrateBps,
+                nativeHandleProvider = { nativeHandle }
+            )
+            val codecSurface = try {
+                encoder!!.start()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start H264 encoder", e)
+                throw e
+            }
 
-        updateNotification("Streaming active ($currentWidth x $currentHeight @ ${currentFps}fps)")
+            // 4. Initialize Camera2 Controller
+            cameraController = Camera2Controller(this).apply {
+                openCamera(
+                    facingBack = isBackCamera,
+                    targetWidth = currentWidth,
+                    targetHeight = currentHeight,
+                    fps = currentFps,
+                    codecSurface = codecSurface,
+                    previewSurfaceTexture = previewTexture,
+                    onOpened = {
+                        Log.i(TAG, "Camera pipeline ready and streaming")
+                        onStarted?.invoke()
+                    }
+                )
+            }
+
+            // 5. Initialize Audio Engine
+            try {
+                audioEngine = AudioEngine(
+                    sampleRate = 48000,
+                    channelCount = 1,
+                    bitrateBps = 32000,
+                    nativeHandleProvider = { nativeHandle }
+                ).apply { start() }
+            } catch (e: Exception) {
+                Log.e(TAG, "AudioEngine failed (continuing without audio)", e)
+                // Non-fatal — video still works without mic
+            }
+
+            // 6. Initialize Network & Transports (C-2: pairing-gated control channel)
+            udpTransport = UdpTransport(
+                controlPort = 5150,
+                pairingManager = pairingManager,
+                getServerPublicKey = {
+                    try { if (nativeHandle != 0L) VeyraNativeBridge.nativeBeginPairing(nativeHandle) else "" } catch (_: Exception) { "" }
+                },
+                getSessionId = { sessionId },
+                onControlCommandReceived = { opCode, payload ->
+                    handleControlCommand(opCode, payload)
+                },
+                onAuthenticated = { ip, udpPort ->
+                    Log.i(TAG, "Client paired & authenticated: $ip:$udpPort")
+                    clientIp = ip
+                    try { VeyraNativeBridge.nativeConfigureUdpDestination(nativeHandle, ip, udpPort) } catch (_: Exception) {}
+                    updateNotification("Streaming to $ip")
+                },
+                onPinRequired = { pin ->
+                    Log.i(TAG, "Pairing PIN: $pin")
+                    updateNotification("Pair with VeyraLink using PIN $pin")
+                },
+                onPairingFailed = { reason ->
+                    Log.w(TAG, "Pairing failed: $reason")
+                    updateNotification("Pairing failed")
+                },
+                onCompletePairing = { clientPubKey ->
+                    try { VeyraNativeBridge.nativeCompletePairing(nativeHandle, clientPubKey) } catch (_: Exception) { false }
+                },
+                onClientDisconnected = {
+                    clientIp = null
+                    pairingManager.reset()
+                    updateNotification("Waiting for connection...")
+                }
+            ).apply { start() }
+
+            bluetoothTransport = BluetoothTransport(
+                onDataReceived = { _, _ -> },
+                onConnected = { Log.i(TAG, "Bluetooth transport active") },
+                onDisconnected = { Log.i(TAG, "Bluetooth transport disconnected") }
+            ).apply { try { start() } catch (e: Exception) { Log.e(TAG, "BT start failed", e) } }
+
+            usbTransport = UsbTransport(this) { connected ->
+                Log.i(TAG, "USB status changed: $connected")
+            }.apply { try { start() } catch (e: Exception) { Log.e(TAG, "USB start failed", e) } }
+
+            updateNotification("Streaming active ($currentWidth x $currentHeight @ ${currentFps}fps)")
+        } catch (e: Exception) {
+            Log.e(TAG, "startStreaming failed, cleaning up", e)
+            // Roll back partial init so next start can retry
+            isStreaming = false
+            try { stopStreaming() } catch (_: Exception) {}
+            throw e
+        }
     }
 
     private fun handleControlCommand(opCode: Int, payload: JSONObject) {

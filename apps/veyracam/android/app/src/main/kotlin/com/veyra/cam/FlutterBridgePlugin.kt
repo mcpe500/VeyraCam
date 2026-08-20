@@ -54,40 +54,85 @@ class FlutterBridgePlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Even
                 val fps = call.argument<Int>("fps") ?: 30
                 val bitrate = call.argument<Int>("bitrate") ?: 2500000
 
-                // Create Texture Entry for zero-copy local preview in Flutter
-                surfaceEntry?.release()
-                val entry = textureRegistry?.registerSurfaceTexture(android.graphics.SurfaceTexture(0))
-                surfaceEntry = entry
-
-                // Start Foreground Service
-                val serviceIntent = Intent(context, VeyraStreamingService::class.java).apply {
-                    action = VeyraStreamingService.ACTION_START_STREAMING
-                }
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
-
-                // Trigger streaming
-                mainHandler.postDelayed({
-                    val svc = VeyraStreamingService.instance
-                    if (svc != null) {
-                        svc.startStreaming(
-                            surfaceTexture = entry?.surfaceTexture(),
-                            facingBack = facingBack,
-                            width = width,
-                            height = height,
-                            fps = fps,
-                            bitrateBps = bitrate,
-                            onStarted = {
-                                result.success(mapOf("textureId" to (entry?.id() ?: -1L)))
-                            }
-                        )
-                    } else {
-                        result.error("SERVICE_NOT_READY", "VeyraStreamingService not ready", null)
+                try {
+                    // Create Texture Entry for zero-copy local preview in Flutter
+                    surfaceEntry?.release()
+                    val entry = try {
+                        textureRegistry?.createSurfaceTexture()
+                    } catch (_: Exception) {
+                        @Suppress("DEPRECATION")
+                        textureRegistry?.registerSurfaceTexture(android.graphics.SurfaceTexture(0))
                     }
-                }, 200)
+                    surfaceEntry = entry
+                    if (entry == null) {
+                        result.error("TEXTURE_FAILED", "Failed to create Flutter surface texture", null)
+                        return
+                    }
+
+                    // Start Foreground Service
+                    val serviceIntent = Intent(context, VeyraStreamingService::class.java).apply {
+                        action = VeyraStreamingService.ACTION_START_STREAMING
+                    }
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            context.startForegroundService(serviceIntent)
+                        } else {
+                            context.startService(serviceIntent)
+                        }
+                    } catch (e: Exception) {
+                        result.error("SERVICE_START_FAILED", e.message, null)
+                        return
+                    }
+
+                    // Trigger streaming with retry for service bind (up to 1s)
+                    var attempts = 0
+                    var resultReplied = false
+                    fun tryStart() {
+                        val svc = VeyraStreamingService.instance
+                        if (svc != null) {
+                            try {
+                                svc.startStreaming(
+                                    surfaceTexture = entry.surfaceTexture(),
+                                    facingBack = facingBack,
+                                    width = width,
+                                    height = height,
+                                    fps = fps,
+                                    bitrateBps = bitrate,
+                                    onStarted = {
+                                        if (!resultReplied) {
+                                            resultReplied = true
+                                            result.success(mapOf("textureId" to entry.id()))
+                                        }
+                                    }
+                                )
+                                // If camera onOpened is delayed, give it 2s then reply anyway with textureId
+                                mainHandler.postDelayed({
+                                    if (!resultReplied) {
+                                        resultReplied = true
+                                        result.success(mapOf("textureId" to entry.id()))
+                                    }
+                                }, 1500)
+                            } catch (e: SecurityException) {
+                                resultReplied = true
+                                result.error("PERMISSION_DENIED", e.message ?: "Camera/Mic permission denied", null)
+                            } catch (e: Exception) {
+                                resultReplied = true
+                                result.error("STREAM_FAILED", e.message ?: "Failed to start streaming", null)
+                            }
+                        } else if (attempts < 5) {
+                            attempts++
+                            mainHandler.postDelayed({ tryStart() }, 200)
+                        } else {
+                            if (!resultReplied) {
+                                resultReplied = true
+                                result.error("SERVICE_NOT_READY", "VeyraStreamingService not ready after 1s", null)
+                            }
+                        }
+                    }
+                    tryStart()
+                } catch (e: Exception) {
+                    result.error("START_FAILED", e.message, null)
+                }
             }
             "stopStreaming" -> {
                 VeyraStreamingService.instance?.stopStreaming()

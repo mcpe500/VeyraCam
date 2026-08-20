@@ -31,7 +31,12 @@ class UsbTransport(
     fun start() {
         if (!isRegistered) {
             val filter = IntentFilter("android.hardware.usb.action.USB_STATE")
-            context.registerReceiver(usbReceiver, filter)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                context.registerReceiver(usbReceiver, filter)
+            }
             isRegistered = true
             Log.i(TAG, "UsbTransport monitoring started")
         }

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:veyra_models/veyra_models.dart';
 
 class VeyraCamController extends ChangeNotifier {
@@ -12,6 +14,7 @@ class VeyraCamController extends ChangeNotifier {
   bool _isStreaming = false;
   bool _isConnecting = false;
   String? _pairingPin;
+  String? _lastError;
   Timer? _pairingPinTimer;
   StreamSubscription? _telemetrySub;
 
@@ -24,18 +27,62 @@ class VeyraCamController extends ChangeNotifier {
   bool get isStreaming => _isStreaming;
   bool get isConnecting => _isConnecting;
   String? get pairingPin => _pairingPin;
+  String? get lastError => _lastError;
   CameraControlsState get controls => _controls;
   StreamProfile get profile => _profile;
   TransportType get transport => _transport;
   TelemetryStats get telemetry => _telemetry;
 
+  Future<bool> _requestPermissions() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      // Request in parallel; notification is Android 13+ only but handler handles it.
+      final statuses = await [
+        Permission.camera,
+        Permission.microphone,
+        Permission.notification,
+      ].request();
+      final camOk = statuses[Permission.camera]?.isGranted ?? false;
+      final micOk = statuses[Permission.microphone]?.isGranted ?? false;
+      // Notification is optional for foreground service, don't block on it.
+      if (!camOk || !micOk) {
+        _lastError = !camOk
+            ? 'Camera permission denied — please allow Camera in Settings'
+            : 'Microphone permission denied — please allow Microphone in Settings';
+        // If permanently denied, guide to settings
+        if ((await Permission.camera.isPermanentlyDenied) ||
+            (await Permission.microphone.isPermanentlyDenied)) {
+          _lastError = '$_lastError. Open App Settings to grant.';
+        }
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Permission request failed: $e');
+      // Fallback: assume granted and let native side guard — avoid blocking launch
+      return true;
+    }
+  }
+
   Future<void> startStreaming({StreamProfile? customProfile}) async {
     if (_isStreaming || _isConnecting) return;
     _isConnecting = true;
+    _lastError = null;
     notifyListeners();
 
     if (customProfile != null) {
       _profile = customProfile;
+    }
+
+    // Android runtime permissions (P0 crash fix — was missing entirely)
+    if (Platform.isAndroid) {
+      final granted = await _requestPermissions();
+      if (!granted) {
+        _isConnecting = false;
+        notifyListeners();
+        debugPrint('startStreaming aborted: $_lastError');
+        return;
+      }
     }
 
     try {
@@ -53,11 +100,26 @@ class VeyraCamController extends ChangeNotifier {
 
       _isStreaming = true;
       _isConnecting = false;
+      _lastError = null;
       _listenTelemetry();
       notifyListeners();
+    } on PlatformException catch (e) {
+      _isConnecting = false;
+      _isStreaming = false;
+      // Surface native error codes to UI
+      if (e.code == 'PERMISSION_DENIED') {
+        _lastError = 'Permission denied: ${e.message}';
+      } else if (e.code == 'STREAM_FAILED' || e.code == 'TEXTURE_FAILED') {
+        _lastError = 'Failed to start: ${e.message}';
+      } else {
+        _lastError = e.message ?? e.code;
+      }
+      notifyListeners();
+      debugPrint('Failed to start streaming [${e.code}]: ${e.message}');
     } catch (e) {
       _isConnecting = false;
       _isStreaming = false;
+      _lastError = e.toString();
       notifyListeners();
       debugPrint('Failed to start streaming: $e');
     }
@@ -149,6 +211,15 @@ class VeyraCamController extends ChangeNotifier {
     try {
       await _controlChannel.invokeMethod('requestIdr');
     } catch (_) {}
+  }
+
+  void clearError() {
+    _lastError = null;
+    notifyListeners();
+  }
+
+  Future<void> openSettings() async {
+    await openAppSettings();
   }
 
   void setProfile(StreamProfile newProfile) {
