@@ -1,0 +1,19 @@
+name: veyra_native
+description: Low-level Dart FFI bindings to Veyra Native Core and Shared Texture Bridge.
+version: 1.0.0
+homepage: https://github.com/veyra/veyra
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  ffi: ^2.1.0
+  meta: ^1.11.0
+  veyra_models:
+    path: ../veyra_models
+  veyra_protocol_dart:
+    path: ../veyra_protocol_dart
+
+dev_dependencies:
+  test: ^1.24.0
+  lints: ^3.0.0

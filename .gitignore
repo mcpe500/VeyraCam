@@ -1,0 +1,42 @@
+# Build directories & binaries
+build/
+bin/
+out/
+*/build/
+*/*/build/
+native/**/build/
+test/build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.obj
+*.lib
+
+# Dart & Flutter
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android
+.gradle/
+local.properties
+**/android/app/build/
+**/android/.gradle/
+*.apk
+*.aab
+
+# IDE & OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Tooling & Cache
+graphify-out/

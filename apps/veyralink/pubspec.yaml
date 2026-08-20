@@ -1,0 +1,29 @@
+name: veyralink
+description: VeyraLink - Windows desktop companion and control dashboard for Veyra Camera.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.16.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  meta: ^1.11.0
+  veyra_models:
+    path: ../../packages/veyra_models
+  veyra_protocol_dart:
+    path: ../../packages/veyra_protocol_dart
+  veyra_native:
+    path: ../../packages/veyra_native
+  veyra_ui:
+    path: ../../packages/veyra_ui
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

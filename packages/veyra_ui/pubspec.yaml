@@ -1,0 +1,21 @@
+name: veyra_ui
+description: Shared UI widgets, themes, diagnostic HUD, and camera control sliders for Veyra apps.
+publish_to: 'none'
+version: 1.0.0
+homepage: https://github.com/veyra/veyra
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.16.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  meta: ^1.11.0
+  veyra_models:
+    path: ../veyra_models
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
